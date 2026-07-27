@@ -82,8 +82,12 @@ export default function PinModal({ user, onSuccess, onClose }) {
 
         {/* User avatar & name */}
         <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-600/30 to-accent-600/30 flex items-center justify-center text-3xl mx-auto mb-3">
-            {user.avatar}
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-primary-600/30 to-accent-600/30 flex items-center justify-center text-3xl mx-auto mb-3 border border-surface-700/60">
+            <img
+              src={user.avatar}
+              alt={user.name}
+              className="w-full h-full object-cover"
+            />
           </div>
           <h2 className="text-xl font-bold text-surface-100">{user.name}</h2>
           <p className="text-surface-400 text-sm mt-1">Enter your 4-digit PIN</p>
