@@ -21,17 +21,17 @@ export default function Header({ user, onLogout, onOpenSettings, onOpenMembers, 
           </span>
         </button>
         <div>
-          <h1 className="font-bold text-white leading-tight">Zookiepookie</h1>
-          <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-xs font-semibold text-emerald-400 tracking-wide uppercase">Dashboard</p>
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold text-white leading-tight">Zookiepookie</h1>
             <button
               onClick={onOpenMembers}
-              className="text-[10px] font-semibold uppercase tracking-wide text-surface-200 bg-surface-800/80 border border-surface-700 rounded-full px-2 py-0.5 hover:border-primary-500/60 hover:text-white transition-all"
+              className="text-xs font-semibold uppercase tracking-wide text-surface-100 bg-surface-800 border border-surface-600 rounded-full px-3 py-1 hover:border-primary-500/60 hover:text-white transition-all"
               id="members-btn"
             >
               Members ({memberCount})
             </button>
           </div>
+          <p className="text-xs font-semibold text-emerald-400 tracking-wide uppercase mt-0.5">Dashboard</p>
         </div>
       </div>
       <button
