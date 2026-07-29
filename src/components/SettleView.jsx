@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { markSplitPaid } from '../db';
+import { requestSplitSettlement, confirmSplitSettlement, rejectSplitSettlement } from '../db';
 import toast from 'react-hot-toast';
 
 function formatCurrency(n) {
@@ -10,6 +10,11 @@ function formatDate(item) {
   const d = item.expenseDate || item.createdAt?.toDate?.();
   if (!d) return '';
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+function getPaymentStatus(split) {
+  if (split.paymentStatus) return split.paymentStatus;
+  return split.isPaid ? 'paid' : 'unpaid';
 }
 
 // Step 1: Transaction selector
@@ -31,8 +36,8 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
   };
 
   // Net: positive = friend owes me, negative = I owe friend
-  const netAmount = splits
-    .filter(s => selected.has(s.id))
+  const selectedSplits = splits.filter(s => selected.has(s.id));
+  const netAmount = selectedSplits
     .reduce((sum, s) => {
       if (s.owerId === currentUser.id) return sum - s.amount;
       return sum + s.amount;
@@ -40,6 +45,10 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
 
   const iOweFriend = netAmount < 0;
   const absAmount = Math.abs(netAmount);
+  const requestableSplits = selectedSplits.filter((s) => s.owerId === currentUser.id && getPaymentStatus(s) === 'unpaid');
+  const confirmableSplits = selectedSplits.filter(
+    (s) => s.payerId === currentUser.id && getPaymentStatus(s) === 'pending_confirmation'
+  );
 
   const buildUpiUrl = (scheme) => {
     const upiId = encodeURIComponent(friend.upiId);
@@ -66,16 +75,67 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
     setTimeout(() => setStep('confirm'), 1500);
   };
 
-  const handleMarkPaid = async () => {
-    if (selected.size === 0) { toast.error('No items selected!'); return; }
+  const handleRequestConfirmation = async () => {
+    if (requestableSplits.length === 0) {
+      toast.error('Select unsettled items that you owe.');
+      return;
+    }
     setPaying(true);
     try {
-      await Promise.all([...selected].map(id => markSplitPaid(id, true)));
-      toast.success('Marked as settled! 🎉');
+      await Promise.all(
+        requestableSplits.map((split) =>
+          requestSplitSettlement(split.id, { id: currentUser.id, name: currentUser.name })
+        )
+      );
+      toast.success('Payment request sent for confirmation.');
       onClose();
     } catch (err) {
       console.error(err);
-      toast.error('Failed to update. Try again.');
+      toast.error('Failed to request confirmation. Try again.');
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    if (confirmableSplits.length === 0) {
+      toast.error('No pending confirmations selected.');
+      return;
+    }
+    setPaying(true);
+    try {
+      await Promise.all(
+        confirmableSplits.map((split) =>
+          confirmSplitSettlement(split.id, { id: currentUser.id, name: currentUser.name })
+        )
+      );
+      toast.success('Payment confirmed and settled.');
+      onClose();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to confirm payment. Try again.');
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  const handleRejectPayment = async () => {
+    if (confirmableSplits.length === 0) {
+      toast.error('No pending confirmations selected.');
+      return;
+    }
+    setPaying(true);
+    try {
+      await Promise.all(
+        confirmableSplits.map((split) =>
+          rejectSplitSettlement(split.id, { id: currentUser.id, name: currentUser.name })
+        )
+      );
+      toast.success('Payment rejected. Items are unsettled again.');
+      onClose();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to reject payment. Try again.');
     } finally {
       setPaying(false);
     }
@@ -177,6 +237,7 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
               {splits.map(s => {
                 const iOwe = s.owerId === currentUser.id;
                 const isSelected = selected.has(s.id);
+                const status = getPaymentStatus(s);
                 return (
                   <label
                     key={s.id}
@@ -192,6 +253,11 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
                       <p className="text-xs text-surface-500 mt-0.5">
                         {iOwe ? `You owe ${friend.name}` : `${friend.name} owes you`} · {formatDate(s)}
                       </p>
+                      {status === 'pending_confirmation' && (
+                        <p className="text-[11px] text-amber-300 mt-1">
+                          {iOwe ? 'Awaiting confirmation from payer' : 'Pending your confirmation'}
+                        </p>
+                      )}
                     </div>
                     <span className={`text-sm font-bold shrink-0 ${iOwe ? 'text-danger-400' : 'text-emerald-400'}`}>
                       {iOwe ? '-' : '+'}{formatCurrency(s.amount)}
@@ -213,22 +279,50 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
                   Pay via UPI
                 </button>
               )}
-              <button
-                onClick={handleMarkPaid}
-                disabled={paying || selected.size === 0}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-sm btn-primary flex items-center justify-center gap-2"
-              >
-                {paying ? (
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {paying ? 'Marking...' : 'Mark Settled'}
-              </button>
+              {confirmableSplits.length > 0 ? (
+                <>
+                  <button
+                    onClick={handleRejectPayment}
+                    disabled={paying}
+                    className="flex-1 py-3.5 rounded-2xl font-bold text-sm border border-danger-500/50 text-danger-300 hover:bg-danger-500/10 transition-all"
+                  >
+                    Reject Payment
+                  </button>
+                  <button
+                    onClick={handleConfirmPayment}
+                    disabled={paying}
+                    className="flex-1 py-3.5 rounded-2xl font-bold text-sm btn-primary flex items-center justify-center gap-2"
+                  >
+                    {paying ? (
+                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                    {paying ? 'Confirming...' : 'Confirm Payment'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleRequestConfirmation}
+                  disabled={paying || requestableSplits.length === 0}
+                  className="flex-1 py-3.5 rounded-2xl font-bold text-sm btn-primary flex items-center justify-center gap-2"
+                >
+                  {paying ? (
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m-4-4h8" />
+                    </svg>
+                  )}
+                  {paying ? 'Requesting...' : 'Request Settlement'}
+                </button>
+              )}
             </div>
           </>
         )}
@@ -272,7 +366,7 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
             <div>
               <p className="font-bold text-white text-lg">Did you complete the payment?</p>
               <p className="text-sm text-surface-400 mt-1">
-                If you paid <span className="text-emerald-400 font-semibold">{formatCurrency(absAmount)}</span> to {friend.name}, confirm below to mark the selected expenses as settled.
+                If you paid <span className="text-emerald-400 font-semibold">{formatCurrency(absAmount)}</span> to {friend.name}, send a settlement request for confirmation.
               </p>
             </div>
             <div className="flex gap-3 pt-1">
@@ -283,8 +377,8 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
                 Not yet
               </button>
               <button
-                onClick={handleMarkPaid}
-                disabled={paying}
+                onClick={handleRequestConfirmation}
+                disabled={paying || requestableSplits.length === 0}
                 className="flex-1 py-3.5 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 transition-all flex items-center justify-center gap-2"
               >
                 {paying ? (
@@ -296,7 +390,7 @@ export default function SettleView({ friend, splits, currentUser, onClose }) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
-                {paying ? 'Settling...' : 'Yes, I paid!'}
+                {paying ? 'Requesting...' : 'Yes, Send Request'}
               </button>
             </div>
           </div>

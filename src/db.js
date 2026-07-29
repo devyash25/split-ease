@@ -141,12 +141,55 @@ export async function addExpenseSplit(split) {
     isRecurring: split.isRecurring,
     expenseDate: split.date,
     isPaid: false,
+    paymentStatus: 'unpaid',
+    paymentRequestedById: null,
+    paymentRequestedByName: null,
+    paymentRequestedAt: null,
+    paymentRespondedAt: null,
     createdAt: serverTimestamp(),
   });
 }
 
 export async function markSplitPaid(splitId, isPaid) {
-  return updateDoc(doc(db, 'expense_splits', splitId), { isPaid });
+  return updateDoc(doc(db, 'expense_splits', splitId), {
+    isPaid,
+    paymentStatus: isPaid ? 'paid' : 'unpaid',
+    paymentRespondedAt: serverTimestamp(),
+  });
+}
+
+export async function requestSplitSettlement(splitId, requester) {
+  return updateDoc(doc(db, 'expense_splits', splitId), {
+    isPaid: false,
+    paymentStatus: 'pending_confirmation',
+    paymentRequestedById: requester.id,
+    paymentRequestedByName: requester.name,
+    paymentRequestedAt: serverTimestamp(),
+    paymentRespondedAt: null,
+  });
+}
+
+export async function confirmSplitSettlement(splitId, confirmer) {
+  return updateDoc(doc(db, 'expense_splits', splitId), {
+    isPaid: true,
+    paymentStatus: 'paid',
+    paymentConfirmedById: confirmer.id,
+    paymentConfirmedByName: confirmer.name,
+    paymentRespondedAt: serverTimestamp(),
+  });
+}
+
+export async function rejectSplitSettlement(splitId, rejecter) {
+  return updateDoc(doc(db, 'expense_splits', splitId), {
+    isPaid: false,
+    paymentStatus: 'unpaid',
+    paymentRequestedById: null,
+    paymentRequestedByName: null,
+    paymentRequestedAt: null,
+    paymentRejectedById: rejecter.id,
+    paymentRejectedByName: rejecter.name,
+    paymentRespondedAt: serverTimestamp(),
+  });
 }
 
 // ─── Real-time listeners ─────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ export default function AddExpense({ currentUser, users, onClose }) {
 
   const getSplits = () => {
     const participants = getParticipants();
+    if (participants.length === 0) return [];
     if (splitMode === 'custom') {
       return participants
         .filter((u) => u.id !== payerId && parseFloat(customAmounts[u.id]) > 0)
@@ -218,9 +219,8 @@ export default function AddExpense({ currentUser, users, onClose }) {
           {/* Exclude Options */}
           {splitMode === 'exclude' && (
             <div className="space-y-2 slide-up">
-              <p className="text-xs text-surface-500">Who should be excluded?</p>
+              <p className="text-xs text-surface-500">Who should be excluded? (you can exclude yourself too)</p>
               {users
-                .filter((u) => u.id !== payerId)
                 .map((u) => (
                   <label
                     key={u.id}
